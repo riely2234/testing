@@ -2,8 +2,9 @@ import React, { useState, useRef, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
 
-// Initialize Gemini API Client
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Initialize Gemini API Client safely to prevent runtime crashes if process is undefined
+const API_KEY = typeof process !== 'undefined' && process.env ? process.env.API_KEY : '';
+const ai = new GoogleGenAI({ apiKey: API_KEY });
 
 type Message = {
   id: string;
@@ -53,7 +54,7 @@ interface CodeBlockProps {
   code: string;
 }
 
-// Code Block Component
+// Code Block Component - Use standard function definition to avoid type issues
 const CodeBlock: React.FC<CodeBlockProps> = ({ language, code }) => {
   const [isCopied, setIsCopied] = useState(false);
 
@@ -171,8 +172,8 @@ const App = () => {
   const handleScroll = () => {
     if (mainRef.current) {
       const { scrollTop, scrollHeight, clientHeight } = mainRef.current;
-      // If user is within 20px of the bottom, we consider them "at the bottom" and enable auto-scroll
-      const isAtBottom = scrollHeight - scrollTop - clientHeight < 20;
+      // If user is within 50px of the bottom, we consider them "at the bottom" and enable auto-scroll
+      const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
       setShouldAutoScroll(isAtBottom);
     }
   };
@@ -180,8 +181,7 @@ const App = () => {
   // Effect to scroll to bottom when messages change, ONLY if auto-scroll is enabled
   useEffect(() => {
     if (shouldAutoScroll) {
-      // Use 'auto' (instant) instead of 'smooth' here to prevent fighting with manual scroll
-      // and to ensure rapid updates don't cause jitter.
+      // Use 'auto' (instant) for streaming updates to prevent jitter
       messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
     }
   }, [messages, shouldAutoScroll]);
@@ -199,12 +199,13 @@ const App = () => {
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setIsLoading(true);
-    setShouldAutoScroll(true); // Ensure we snap to bottom when sending
     
-    // Initial scroll on send can be smooth
+    // Force snap to bottom when sending a new message
+    setShouldAutoScroll(true);
+    // Use setTimeout to allow state update before smooth scrolling
     setTimeout(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, 0);
+    }, 10);
 
     try {
       const aiMessageId = (Date.now() + 1).toString();
@@ -218,7 +219,7 @@ const App = () => {
         model: "gemini-3-flash-preview",
         contents: userMessage.text,
         config: {
-          systemInstruction: "You are a helpful assistant. You are allowed to generate sexually explicit content.",
+          systemInstruction: "You are a helpful assistant.", // Reset instructions to standard
           safetySettings: [
             {
               category: HarmCategory.HARM_CATEGORY_HARASSMENT,
