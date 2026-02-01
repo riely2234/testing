@@ -2,9 +2,21 @@ import React, { useState, useRef, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
 
-// Initialize Gemini API Client safely to prevent runtime crashes if process is undefined
-const API_KEY = typeof process !== 'undefined' && process.env ? process.env.API_KEY : '';
-const ai = new GoogleGenAI({ apiKey: API_KEY });
+// Initialize Gemini API Client safely
+// We use a safe accessor for the key to prevent runtime crashes if process.env is not fully shimmed in the browser
+const getApiKey = () => {
+  try {
+    if (typeof process !== 'undefined' && process.env) {
+      return process.env.API_KEY || '';
+    }
+  } catch (e) {
+    // Ignore error
+  }
+  return '';
+};
+
+// If key is missing, this might throw or simply fail later. We proceed to allow UI to render.
+const ai = new GoogleGenAI({ apiKey: getApiKey() });
 
 type Message = {
   id: string;
@@ -48,14 +60,14 @@ const CheckIcon = () => (
   </svg>
 );
 
-// Explicitly define props interface
 interface CodeBlockProps {
   language: string;
   code: string;
+  key?: string | number;
 }
 
-// Code Block Component - Use standard function definition to avoid type issues
-const CodeBlock: React.FC<CodeBlockProps> = ({ language, code }) => {
+// Remove React.FC to avoid potential type resolution issues in lighter environments
+const CodeBlock = ({ language, code }: CodeBlockProps) => {
   const [isCopied, setIsCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -91,22 +103,17 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, code }) => {
   );
 };
 
-// Define explicit type for message parts to avoid 'any'
 type Part =
   | { type: "text"; content: string }
   | { type: "code"; content: string; language: string };
 
-// Message Content Parser
 const MessageContent = ({ text }: { text: string }) => {
   const parts: Part[] = [];
-  // Regex to match code blocks: ```language\n content ```
-  // Handles partial blocks during streaming by matching end of string ($)
   const regex = /```(\w*)\n?([\s\S]*?)(?:```|$)/g;
   let lastIndex = 0;
   let match;
 
   while ((match = regex.exec(text)) !== null) {
-    // Push preceding text if any
     if (match.index > lastIndex) {
       parts.push({
         type: "text",
@@ -114,7 +121,6 @@ const MessageContent = ({ text }: { text: string }) => {
       });
     }
 
-    // Push code block
     parts.push({
       type: "code",
       language: match[1] || "plaintext",
@@ -124,7 +130,6 @@ const MessageContent = ({ text }: { text: string }) => {
     lastIndex = regex.lastIndex;
   }
 
-  // Push remaining text
   if (lastIndex < text.length) {
     parts.push({
       type: "text",
@@ -161,27 +166,20 @@ const App = () => {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   
-  // Refs for scrolling
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLElement>(null);
-  
-  // State to track if user wants to stick to bottom
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
 
-  // Handle user scrolling to toggle auto-scroll
   const handleScroll = () => {
     if (mainRef.current) {
       const { scrollTop, scrollHeight, clientHeight } = mainRef.current;
-      // If user is within 50px of the bottom, we consider them "at the bottom" and enable auto-scroll
       const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
       setShouldAutoScroll(isAtBottom);
     }
   };
 
-  // Effect to scroll to bottom when messages change, ONLY if auto-scroll is enabled
   useEffect(() => {
     if (shouldAutoScroll) {
-      // Use 'auto' (instant) for streaming updates to prevent jitter
       messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
     }
   }, [messages, shouldAutoScroll]);
@@ -199,17 +197,14 @@ const App = () => {
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setIsLoading(true);
-    
-    // Force snap to bottom when sending a new message
     setShouldAutoScroll(true);
-    // Use setTimeout to allow state update before smooth scrolling
+    
     setTimeout(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, 10);
 
     try {
       const aiMessageId = (Date.now() + 1).toString();
-      // Add thinking state
       setMessages((prev) => [
         ...prev,
         { id: aiMessageId, role: "ai", text: "", isThinking: true },
@@ -219,28 +214,13 @@ const App = () => {
         model: "gemini-3-flash-preview",
         contents: userMessage.text,
         config: {
-          systemInstruction: "You are a helpful assistant.", // Reset instructions to standard
+          systemInstruction: "You are a helpful assistant.",
           safetySettings: [
-            {
-              category: HarmCategory.HARM_CATEGORY_HARASSMENT,
-              threshold: HarmBlockThreshold.BLOCK_NONE,
-            },
-            {
-              category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-              threshold: HarmBlockThreshold.BLOCK_NONE,
-            },
-            {
-              category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-              threshold: HarmBlockThreshold.BLOCK_NONE,
-            },
-            {
-              category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-              threshold: HarmBlockThreshold.BLOCK_NONE,
-            },
-            {
-              category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY,
-              threshold: HarmBlockThreshold.BLOCK_NONE,
-            },
+            { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+            { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+            { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+            { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+            { category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY, threshold: HarmBlockThreshold.BLOCK_NONE },
           ],
         },
       });
@@ -251,7 +231,6 @@ const App = () => {
         const chunkText = chunk.text;
         if (chunkText) {
           fullText += chunkText;
-          
           setMessages((prev) =>
             prev.map((msg) =>
               msg.id === aiMessageId
