@@ -1,0 +1,5 @@
+{
+  "description": "A React-based Chat Application using Google Gemini API.",
+  "requestFramePermissions": [],
+  "name": "App"
+}
